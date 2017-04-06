@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" binding="early" xmlns:qt="http://www.qt.io/2015/02/scxml-ext" name="chronoStateMachine"  initial="begin">
+
+
+
+        <state id="chrono">
+
+            <state id="running">
+
+                <state id="run">
+
+                    <transition type="external" event="b2" target="run">
+                        <raise event="timeout"/>
+                    </transition>
+                    <transition type="external" event="timeout" target="run">
+                        <send event="doRefresh"/>
+                    </transition>
+                    <transition type="external" event="b1" target="save">
+                        <send event="save"/>
+                    </transition>
+                    <onentry>
+                        <send event="timeout" delay="7ms"/>
+                    </onentry>
+                </state>
+                <state id="pause">
+
+                    <transition type="external" event="b2" target="run">
+
+                        <send event="continue"/>
+                    </transition>
+                </state>
+            </state>
+            <onentry>
+                <send delay="1s" event="init"/>
+            </onentry>
+        </state>
+        <state id="save">
+
+            <state id="init">
+
+                <transition type="external" event="b3" target="update">
+
+                    <send event="save"/>
+                </transition>
+            </state>
+            <state id="update">
+
+                <onentry>
+                    <send delay="1s" event="back"/>
+                </onentry>
+                <transition type="external" event="back" target="init">
+
+                </transition>
+                <transition type="external" event="b3" target="running">
+
+                    <send event="remove"/>
+                </transition>
+            </state>
+            <transition type="external" event="b1" target="stop">
+
+                <send event="stop"/>
+                <send event="deleteTime"/>
+            </transition>
+        </state>
+
+        <state id="begin">
+
+            <transition type="external" event="b1" target="stop">
+
+                <send event="start"/>
+                <send event="startTime"/>
+            </transition>
+            <transition type="external" event="b2" target="run">
+
+                <send event="running"/>
+                <send event="startTime"/>
+            </transition>
+        </state>
+        <state id="stop">
+
+            <transition type="external" event="b1" target="begin">
+
+                <send event="reset"/>
+            </transition>
+        </state>
+</scxml>

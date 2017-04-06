@@ -1,6 +1,7 @@
 import org.jdom.Element;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -11,28 +12,53 @@ public class FSM {
     public static List<State> states;
     public static List<Event> events;
     public final String className = "GeneratedFSM";
+    public final String METHOD_SUFFIX = "Event";
 
     public FSM(AstParser ast){
         this.ast = ast;
         initStates();
     }
     private void initStates(){
-        this.states = new ArrayList<State>();
+        this.states = new ArrayList();
         for(Element child : (List<Element>)ast.getRoot().getChildren()) {
             if(child.getName().equals("state")){
                 states.add(new State(child));
             }
 
         }
-        for(State s : states)
+        for(State s : states) {
             s.fillData();
+        }
         getAllEvents();
+        flattening();
+    }
+
+    public void flattening(){
+        boolean isFinish = false;
+        while(!isFinish){
+            isFinish = true;
+            for(int i = 0; i < states.size();i++){
+                if(!states.get(i).gotParent() && !states.get(i).getChildren().isEmpty()) {
+                    modifyTransition(states.get(i),states.get(i).getChildren());
+                    for (State child : states.get(i).getChildren()) {
+                        if(child.isInitial()) {
+                            child.getTransitions().addAll(states.get(i).getTransitions());
+                            child.getActions().addAll(states.get(i).getActions());
+                        }
+                        child.noMoreParent();
+                    }
+                    states.remove(i);
+                    isFinish = false;
+                }
+            }
+
+        }
     }
     private boolean contains(List<Event> l, Event e){
 
         for(Event c : l){
             if(c.getId().equals(e.getId())) {
-                if(c.getType() == Event.Type.TRIGGER && e.getType() == Event.Type.RAISE)
+                if((c.getType() == Event.Type.TRIGGER && e.getType() == Event.Type.RAISE) || (e.getType() == Event.Type.TRIGGER && c.getType() == Event.Type.RAISE))
                     return true;
                 else if(c.getType() == e.getType())
                     return true;
@@ -41,7 +67,7 @@ public class FSM {
         return false;
     }
     private void getAllEvents() {
-        events = new ArrayList<Event>();
+        events = new ArrayList();
         for (State state : states) {
             for (Action action : state.getActions())
                 for(Event event : action.getEvents())
@@ -58,108 +84,131 @@ public class FSM {
         }
     }
 
+
+
+    private void modifyTransition(State parent, List<State> targets){
+        for(State state: states){
+            List<Integer> deleteSafe = new ArrayList();
+            for(int i = 0; i < state.getTransitions().size();i++){
+                if(parent == state.getTransitions().get(i).getTarget()) {
+                    for(State s : targets){
+                        state.getTransitions().add(new Transition(s,state.getTransitions().get(i)));
+                    }
+                    deleteSafe.add(i);
+                }
+            }
+            for(int i : deleteSafe){
+                state.getTransitions().remove(i);
+            }
+        }
+    }
+
     private String initState(){
-        return "currentState = State."+ast.getRoot().getAttribute("initial").getValue()+";";
+        return "currentState = State."+ast.getRoot().getAttribute("initial").getValue().toUpperCase()+";";
     }
 
     private String outputSwitch(){
-        String output="while(!eventQueue.isEmpty()){";
-        output+="Event event = eventQueue.poll();";
-        output+="switch(currentState){";
+        StringBuilder output = new StringBuilder();
+        output.append("while(!eventQueue.isEmpty()){")
+                .append("Event event = eventQueue.poll();")
+                .append("System.out.println(\"Event -> \"+event.name());")
+                .append("switch(currentState){");
+
         for(State state : states){
-            output+="case "+state.getId()+":\n";
+            output.append("case "+state.getId()+":\n");
             boolean firstIf = true;
             for(Transition t : state.getTransitions()){
                 String event = t.getTrigger().toString();
                 if(firstIf){
-                    output+="if";
+                    output.append("if");
                     firstIf = false;
                 }
-                else output+="else if";
-                output+="(event == "+event+"){\n";
+                else output.append("else if");
+                output.append("(event == "+event+"){\n");
 
                 for(Event e : t.getEvents()){
                     if(e.getType() == Event.Type.SEND)
-                        output+=e.getId()+"();";
+                        output.append(e.getId().toLowerCase() + METHOD_SUFFIX + "();");
+
                     else
-                        output+="submitEvent("+e.toString()+");";
+                        output.append("submitEvent(" + e.toString() + ");");
                 }
 
                 for(Action a : state.getActions()){
                     if(a.getType() == Action.Type.ONEXIT)
                        for(Event e : a.getEvents()){
-                           output+=e.getId()+"();";
+                           output.append(e.getId().toLowerCase()+METHOD_SUFFIX+"();");
                        }
                 }
                 for(Action a : t.getTarget().getActions()){
                     if( a.getType() == Action.Type.ONENTRY)
                         for(Event e : a.getEvents())
-                            output+=e.getId()+"();";
+                            output.append(e.getId().toLowerCase()+METHOD_SUFFIX+"();");
                 }
 
-                output+="currentState = "+t.getTarget().toString()+";";
-                output+="}\n";
+                output.append("currentState = "+t.getTarget().toString()+";")
+                        .append("}\n");
             }
 
-            output+="break;";
+            output.append("break;");
         }
-        output+="}}\n";
-        return output;
+        output.append("}}\n");
+        return output.toString();
 
     }
 
     private String outputEvents() {
-        String output = "enum Event{";
+        StringBuilder output = new StringBuilder("enum Event{");
         for(Event event : events){
             if(event.getType() != Event.Type.SEND)
-                output+=event.getId()+",";
+                output.append(event.getId()+",");
         }
-        output = output.substring(0,output.length()-1);
-        output+="};\n";
-        return output;
+        output = new StringBuilder(output.substring(0,output.length()-1));
+        output.append("};\n");
+        return output.toString();
 
     }
 
     private String outputStates(){
-        String output = "enum State{";
+        StringBuilder output = new StringBuilder("enum State{");
         for(State state : states){
-            output +=state.getId()+",";
+            output.append(state.getId()+",");
         }
-        output = output.substring(0,output.length()-1);
-        output+="};\n";
-        return output;
+        output = new StringBuilder(output.substring(0,output.length()-1));
+        output.append("};\n");
+        return output.toString();
     }
 
-    private String correctIndent(String output){
+    private String correctIndent(StringBuilder output){
         int cpt = 0;
-        String finalclass = "";
+        StringBuilder finalclass = new StringBuilder();
         String word ="";
-        for(char c : output.toCharArray()){
+        for(char c : output.toString().toCharArray()){
             word += c;
             if(word.equals("break"))cpt--;
             switch(c){
                 case ':':
-                case '{':cpt++;finalclass+=c+"\n"+indent(cpt);word ="";break;
-                case '}':cpt--;finalclass+="\n"+indent(cpt)+c;word = "";break;
-                case '\n':finalclass+=c+indent(cpt);word = "";break;
+                case '{':cpt++;finalclass.append(c+"\n"+indent(cpt));word ="";break;
+                case '}':cpt--;finalclass.append("\n"+indent(cpt)+c);word = "";break;
+                case '\n':finalclass.append(c+indent(cpt));word = "";break;
                 case ',':
-                case ';':finalclass+=c+"\n"+indent(cpt);word = "";break;
+                case ';':finalclass.append(c+"\n"+indent(cpt));word = "";break;
                 case ' ': word = "";
-                default:finalclass+=c;break;
+                default:finalclass.append(c);break;
             }
         }
-        return finalclass;
+        return finalclass.toString();
     }
     private String indent(int in){
-        String tmp = "";
+        StringBuilder tmp = new StringBuilder();
         for(int i = 0; i < in; i++){
-            tmp+="\t";
+            tmp.append("\t");
         }
-        return tmp;
+        return tmp.toString();
     }
 
     public String writingClass(){
-        String output="";
+        StringBuilder output= new StringBuilder();
         String imports = "import java.util.LinkedList;";
 
         String header = "public class "+className+"{";
@@ -167,14 +216,23 @@ public class FSM {
         String constructor ="public "+className+"(){"+initState()+"}\n";
         String activate = "public void activate(){";
         String eventList = "LinkedList<Event> eventQueue = new LinkedList<Event>();";
-        String methods ="";
+        StringBuilder methods = new StringBuilder();
         for(Event event : events){
             if(event.getType() == Event.Type.SEND)
-                methods+="public void "+event.getId()+"(){System.out.println(\"executing "+event.getId()+"\");}\n";
+                methods.append("public void "+event.getId().toLowerCase()+METHOD_SUFFIX+"(){System.out.println(\"executing "+event.getId()+"\");}\n");
         }
         activate+=  outputSwitch() +"}\n";
         String submit ="public void submitEvent(Event e){eventQueue.add(e);}\n";
-        output += imports+header+outputEvents()+outputStates()+eventList+initStateVar+constructor+submit+activate+methods+"}";
+        output.append(imports)
+                .append(header)
+                .append(outputEvents())
+                .append(outputStates())
+                .append(eventList)
+                .append(initStateVar)
+                .append(constructor)
+                .append(submit)
+                .append(activate)
+                .append(methods+"}");
         return correctIndent(output);
     }
 

@@ -15,11 +15,16 @@ public class Event {
     private static final String PREFIX = "Event";
     public Event(Element e,Type type){
         this.type = type;
-        this.id = e.getAttribute("event").getValue();
+        this.id = e.getAttribute("event").getValue().toUpperCase();
     }
     public Event(String s,Type type){
         this.type = type;
-        this.id = s;
+        this.id = s.toUpperCase();
+    }
+
+    public boolean equals(Event e){
+        if(e.id == this.id) return true;
+        else return false;
     }
 
 
